@@ -1,0 +1,90 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Streamlit
+.streamlit/secrets.toml
+
+# ML and Data Science
+mlruns/
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+*.model
+
+# Logs
+*.log
+logs/
+
+# Database files (keep structure but ignore large data files)
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# API keys and secrets
+.env.local
+.env.production
+secrets.json
+config.json
+
+# Deployment artifacts
+*.tar.gz
+*.zip
+deployment/
+
+# Test coverage
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Documentation build
+docs/_build/
+site/

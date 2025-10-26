@@ -1,0 +1,332 @@
+#!/usr/bin/env python3
+"""
+Local Investo Ingestion:
+- Reads tickers from a JSON file ({"tickers": ["AAPL","AMZN", ...]} or ["AAPL", ...])
+- Ensures DuckDB is initialized (data/duckdb/investo.duckdb)
+- Upserts yfinance OHLCV into `prices`
+- Builds 15+ features and upserts into `features`
+"""
+
+import argparse
+import json
+import logging
+import time
+from pathlib import Path
+from typing import List, Tuple
+import duckdb
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+# ------------------------------
+# Paths / Configs
+# ------------------------------
+ROOT = Path(__file__).resolve().parent
+DATA_DIR = ROOT / "data"
+DUCKDB_DIR = DATA_DIR / "duckdb"
+DUCKDB_PATH = DUCKDB_DIR / "investo.duckdb"   # <- consistent location
+RAW_DIR = DATA_DIR / "raw"
+MIN_ROWS_REQUIRED = 2000  # adjust if needed (e.g., 500 for newer tickers)
+
+# ------------------------------
+# Logging
+# ------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+log = logging.getLogger("ingestion")
+
+# ------------------------------
+# DDL
+# ------------------------------
+DDL_PRICES = """
+CREATE TABLE IF NOT EXISTS prices (
+  date DATE,
+  open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, adj_close DOUBLE,
+  volume BIGINT, dividends DOUBLE, stock_splits DOUBLE,
+  ticker VARCHAR
+);
+"""
+
+DDL_FEATURES = """
+CREATE TABLE IF NOT EXISTS features (
+  date DATE, ticker VARCHAR,
+  ret_1d DOUBLE, ret_5d DOUBLE, ret_21d DOUBLE, log_ret_1d DOUBLE,
+  sma_5 DOUBLE, sma_10 DOUBLE, sma_20 DOUBLE,
+  ema_12 DOUBLE, ema_26 DOUBLE,
+  macd DOUBLE, macd_signal DOUBLE, macd_hist DOUBLE,
+  rsi_14 DOUBLE,
+  bb_mid_20 DOUBLE, bb_upper_20 DOUBLE, bb_lower_20 DOUBLE,
+  stoch_k_14 DOUBLE, stoch_d_3 DOUBLE,
+  atr_14 DOUBLE,
+  obv DOUBLE,
+  vol_21 DOUBLE
+);
+"""
+
+def ensure_duckdb_initialized() -> bool:
+    already = DUCKDB_PATH.exists()
+    DUCKDB_DIR.mkdir(parents=True, exist_ok=True)
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(str(DUCKDB_PATH))
+    con.execute(DDL_PRICES)
+    con.execute(DDL_FEATURES)
+    con.close()
+    return already
+
+def connect_duckdb():
+    return duckdb.connect(str(DUCKDB_PATH))
+
+# ------------------------------
+# Yahoo fetch (with retries)
+# ------------------------------
+def fetch_yf_one(ticker: str, retries: int = 3, backoff: float = 1.5) -> pd.DataFrame:
+    last_err = None
+    for i in range(retries):
+        try:
+            df = yf.download(ticker, period="max", interval="1d", auto_adjust=False, actions=True, progress=False)
+            if df is not None and not df.empty:
+                if isinstance(df.index, pd.DatetimeIndex):
+                    df = df.reset_index().rename(columns={"Date": "date"})
+                df["ticker"] = ticker
+                req = ["Open","High","Low","Close","Adj Close","Volume","Dividends","Stock Splits"]
+                for c in req:
+                    if c not in df.columns:
+                        df[c] = np.nan
+                df = df[["date","Open","High","Low","Close","Adj Close","Volume","Dividends","Stock Splits","ticker"]]
+                df.columns = ["date","open","high","low","close","adj_close","volume","dividends","stock_splits","ticker"]
+                df["date"] = pd.to_datetime(df["date"]).dt.date
+                return df.sort_values("date").dropna(subset=["date","ticker"])
+            last_err = RuntimeError(f"No data for {ticker}")
+        except Exception as e:
+            last_err = e
+        time.sleep(backoff * (i + 1))
+    raise last_err
+
+# ------------------------------
+# Feature engineering (>= 15 features)
+# ------------------------------
+def ema(series: pd.Series, span: int) -> pd.Series:
+    return series.ewm(span=span, adjust=False).mean()
+
+def rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    delta = series.diff()
+    up = np.where(delta > 0, delta, 0.0)
+    down = np.where(delta < 0, -delta, 0.0)
+    roll_up = pd.Series(up, index=series.index).ewm(span=period, adjust=False).mean()
+    roll_down = pd.Series(down, index=series.index).ewm(span=period, adjust=False).mean()
+    rs = roll_up / (roll_down + 1e-12)
+    return 100 - (100 / (1 + rs))
+
+def bollinger_bands(series: pd.Series, window: int = 20, num_std: float = 2.0):
+    mid = series.rolling(window).mean()
+    std = series.rolling(window).std(ddof=0)
+    upper = mid + num_std * std
+    lower = mid - num_std * std
+    return mid, upper, lower
+
+def macd_parts(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
+    ema_fast = ema(series, fast)
+    ema_slow = ema(series, slow)
+    macd = ema_fast - ema_slow
+    macd_signal = ema(macd, signal)
+    macd_hist = macd - macd_signal
+    return macd, macd_signal, macd_hist
+
+def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        (high - low).abs(),
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+    return tr.rolling(period).mean()
+
+def stochastic_kd(high: pd.Series, low: pd.Series, close: pd.Series, k_period: int = 14, d_period: int = 3):
+    lowest_low = low.rolling(k_period).min()
+    highest_high = high.rolling(k_period).max()
+    k = 100 * (close - lowest_low) / (highest_high - lowest_low + 1e-12)
+    d = k.rolling(d_period).mean()
+    return k, d
+
+def on_balance_volume(close: pd.Series, volume: pd.Series) -> pd.Series:
+    sign = np.sign(close.diff().fillna(0))
+    return (sign * volume.fillna(0)).cumsum()
+
+def build_features_for_one(pr: pd.DataFrame) -> pd.DataFrame:
+    g = pr.copy().reset_index(drop=True)
+    price = g["adj_close"]
+
+    g["ret_1d"]  = price.pct_change()
+    g["ret_5d"]  = price.pct_change(5)
+    g["ret_21d"] = price.pct_change(21)
+    g["log_ret_1d"] = np.log(price / price.shift(1))
+    g["vol_21"] = g["ret_1d"].rolling(21).std() * np.sqrt(252)
+
+    g["sma_5"]  = price.rolling(5).mean()
+    g["sma_10"] = price.rolling(10).mean()
+    g["sma_20"] = price.rolling(20).mean()
+    g["ema_12"] = ema(price, 12)
+    g["ema_26"] = ema(price, 26)
+
+    g["macd"], g["macd_signal"], g["macd_hist"] = macd_parts(price, 12, 26, 9)
+    g["rsi_14"] = rsi(price, 14)
+    g["bb_mid_20"], g["bb_upper_20"], g["bb_lower_20"] = bollinger_bands(price, 20, 2.0)
+    g["stoch_k_14"], g["stoch_d_3"] = stochastic_kd(g["high"], g["low"], g["close"], 14, 3)
+    g["atr_14"] = atr(g["high"], g["low"], g["close"], 14)
+    g["obv"] = on_balance_volume(price, g["volume"])
+
+    feat_cols = [
+        "ret_1d","ret_5d","ret_21d","log_ret_1d",
+        "sma_5","sma_10","sma_20","ema_12","ema_26",
+        "macd","macd_signal","macd_hist",
+        "rsi_14",
+        "bb_mid_20","bb_upper_20","bb_lower_20",
+        "stoch_k_14","stoch_d_3",
+        "atr_14","obv","vol_21"
+    ]
+    g = g[["date","ticker"] + feat_cols].dropna().reset_index(drop=True)
+    return g
+
+# ------------------------------
+# Upserts
+# ------------------------------
+def upsert_prices(con, df: pd.DataFrame, replace_existing: bool = False) -> int:
+    if df.empty:
+        return 0
+    ticker = df["ticker"].iloc[0]
+    con.execute(DDL_PRICES)
+
+    if replace_existing:
+        con.execute("DELETE FROM prices WHERE ticker = ?", [ticker])
+
+    con.register("df_stage", df)
+    con.execute("DROP TABLE IF EXISTS _stage;")
+    con.execute("CREATE TEMP TABLE _stage AS SELECT * FROM df_stage;")
+    con.execute("""
+        MERGE INTO prices AS tgt
+        USING _stage AS src
+        ON tgt.date = src.date AND tgt.ticker = src.ticker
+        WHEN MATCHED THEN UPDATE SET
+            open=src.open, high=src.high, low=src.low, close=src.close, adj_close=src.adj_close,
+            volume=src.volume, dividends=src.dividends, stock_splits=src.stock_splits
+        WHEN NOT MATCHED THEN INSERT
+            (date, open, high, low, close, adj_close, volume, dividends, stock_splits, ticker)
+        VALUES
+            (src.date, src.open, src.high, src.low, src.close, src.adj_close, src.volume, src.dividends, src.stock_splits, src.ticker);
+    """)
+    con.execute("DROP TABLE IF EXISTS _stage;")
+    try:
+        con.unregister("df_stage")
+    except:
+        pass
+    return len(df)
+
+def upsert_features(con, feats: pd.DataFrame, replace_existing: bool = False) -> int:
+    if feats.empty:
+        return 0
+    ticker = feats["ticker"].iloc[0]
+    con.execute(DDL_FEATURES)
+
+    if replace_existing:
+        con.execute("DELETE FROM features WHERE ticker = ?", [ticker])
+
+    con.register("df_feats", feats)
+    con.execute("DROP TABLE IF EXISTS _stagef;")
+    con.execute("CREATE TEMP TABLE _stagef AS SELECT * FROM df_feats;")
+    con.execute("""
+        MERGE INTO features AS tgt
+        USING _stagef AS src
+        ON tgt.date = src.date AND tgt.ticker = src.ticker
+        WHEN MATCHED THEN UPDATE SET
+          ret_1d=src.ret_1d, ret_5d=src.ret_5d, ret_21d=src.ret_21d, log_ret_1d=src.log_ret_1d,
+          sma_5=src.sma_5, sma_10=src.sma_10, sma_20=src.sma_20,
+          ema_12=src.ema_12, ema_26=src.ema_26,
+          macd=src.macd, macd_signal=src.macd_signal, macd_hist=src.macd_hist,
+          rsi_14=src.rsi_14,
+          bb_mid_20=src.bb_mid_20, bb_upper_20=src.bb_upper_20, bb_lower_20=src.bb_lower_20,
+          stoch_k_14=src.stoch_k_14, stoch_d_3=src.stoch_d_3,
+          atr_14=src.atr_14, obv=src.obv, vol_21=src.vol_21
+        WHEN NOT MATCHED THEN INSERT
+          (date, ticker,
+           ret_1d, ret_5d, ret_21d, log_ret_1d,
+           sma_5, sma_10, sma_20, ema_12, ema_26,
+           macd, macd_signal, macd_hist,
+           rsi_14,
+           bb_mid_20, bb_upper_20, bb_lower_20,
+           stoch_k_14, stoch_d_3,
+           atr_14, obv, vol_21)
+        VALUES
+          (src.date, src.ticker,
+           src.ret_1d, src.ret_5d, src.ret_21d, src.log_ret_1d,
+           src.sma_5, src.sma_10, src.sma_20, src.ema_12, src.ema_26,
+           src.macd, src.macd_signal, src.macd_hist,
+           src.rsi_14,
+           src.bb_mid_20, src.bb_upper_20, src.bb_lower_20,
+           src.stoch_k_14, src.stoch_d_3,
+           src.atr_14, src.obv, src.vol_21);
+    """)
+    con.execute("DROP TABLE IF EXISTS _stagef;")
+    try:
+        con.unregister("df_feats")
+    except:
+        pass
+    return len(feats)
+
+# ------------------------------
+# Orchestration
+# ------------------------------
+def load_tickers(json_path: Path) -> List[str]:
+    obj = json.loads(Path(json_path).read_text())
+    if isinstance(obj, dict) and "tickers" in obj:
+        return [t.strip().upper() for t in obj["tickers"] if t and isinstance(t, str)]
+    if isinstance(obj, list):
+        return [t.strip().upper() for t in obj if t and isinstance(t, str)]
+    raise ValueError("ticker.json must be {'tickers': [ ... ]} or a list of strings")
+
+def ingest_one(con: duckdb.DuckDBPyConnection, ticker: str, replace_existing: bool) -> Tuple[int, int]:
+    log.info(f"↻ {ticker}: fetching yfinance…")
+    df = fetch_yf_one(ticker)
+    if df.empty or len(df) < MIN_ROWS_REQUIRED:
+        log.warning(f"  Skipping {ticker}: insufficient rows ({len(df)}).")
+        return 0, 0
+
+    # Persist raw parquet (correct usage)
+    raw_path = RAW_DIR / f"{ticker}.parquet"
+    df.to_parquet(raw_path, index=False)
+
+    n_prices = upsert_prices(con, df, replace_existing=replace_existing)
+    log.info(f"  ✓ upserted {n_prices} rows into prices")
+
+    feats = build_features_for_one(df)
+    n_feats = upsert_features(con, feats, replace_existing=replace_existing)
+    log.info(f"  ✓ upserted {n_feats} rows into features")
+
+    return n_prices, n_feats
+
+def main(json_path: str, replace_existing: bool):
+    existed = ensure_duckdb_initialized()
+    log.info(f"🐤 DuckDB at {DUCKDB_PATH} — {'found' if existed else 'created'}")
+
+    tickers = load_tickers(Path(json_path))
+    if not tickers:
+        raise SystemExit("No tickers found in JSON.")
+
+    con = connect_duckdb()
+    total_p = total_f = 0
+    for t in tickers:
+        p, f = ingest_one(con, t, replace_existing=replace_existing)
+        total_p += p; total_f += f
+    con.close()
+    log.info(f"✅ Done. Prices upserted: {total_p:,} | Features upserted: {total_f:,}")
+
+# ------------------------------
+# CLI
+# ------------------------------
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tickers-json", required=True, help="Path to ticker.json (e.g., {'tickers':['AAPL','NVDA']})")
+    ap.add_argument("--replace-existing", action="store_true", help="Delete this ticker's existing rows before insert")
+    args = ap.parse_args()
+    main(args.tickers_json, replace_existing=args.replace_existing)

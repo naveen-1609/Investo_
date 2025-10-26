@@ -1,0 +1,58 @@
+# Investo - AI-Powered Stock Analysis Platform
+
+A comprehensive stock analysis application featuring:
+
+## 🎯 Features
+- **Investment Calculator**: Calculate expected returns with interactive charts
+- **AI Stock Analysis**: OpenAI-powered stock insights and recommendations  
+- **Dynamic Ticker Management**: Add new stocks with automated pipeline
+- **Real-time Data**: Live stock data from Yahoo Finance
+- **ML Predictions**: LSTM-based price predictions
+- **Professional UI**: Modern, responsive design with beautiful tables
+
+## 🚀 Quick Start
+
+### Local Development
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the app
+streamlit run investment_calculator.py
+```
+
+### Deployment Options
+This app is ready for deployment on:
+- **Streamlit Cloud** (recommended - FREE)
+- **Railway** (FREE tier)
+- **Heroku** (FREE tier)
+- **DigitalOcean App Platform**
+
+## 📊 Tech Stack
+- **Frontend**: Streamlit
+- **Backend**: Python, DuckDB
+- **ML**: PyTorch, Scikit-learn
+- **Data**: Yahoo Finance API
+- **AI**: OpenAI GPT API
+- **Visualization**: Plotly
+
+## 🔧 Configuration
+Set your OpenAI API key as an environment variable:
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+```
+
+## 📈 Usage
+1. Select a stock ticker from the dropdown
+2. Enter investment amount and time horizon
+3. View interactive charts and calculations
+4. Get AI-powered analysis and recommendations
+5. Add new tickers with the automated pipeline
+
+## 🛠️ Development
+The app uses a modular architecture with separate components for:
+- Data ingestion and processing
+- Machine learning model training
+- Prediction generation
+- DAG-based pipeline orchestration
+- AI analysis and summarization

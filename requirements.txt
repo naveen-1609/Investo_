@@ -1,0 +1,14 @@
+duckdb>=1.4.1
+matplotlib>=3.10.7
+mlflow>=3.5.1
+numpy>=2.3.4
+openai>=2.6.0
+pandas>=2.3.3
+plotly>=5.0.0
+pydantic>=2.0.0
+pyaml>=25.7.0
+python-dotenv>=1.0.0
+scikit-learn>=1.7.2
+streamlit>=1.50.0
+torch>=2.9.0
+yfinance>=0.2.66
