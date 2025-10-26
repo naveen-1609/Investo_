@@ -1,4 +1,4 @@
-# Investo - AI-Powered Stock Analysis Platform
+# 💰 Investo - AI-Powered Stock Analysis Platform
 
 A comprehensive stock analysis application featuring:
 

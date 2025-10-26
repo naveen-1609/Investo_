@@ -1,8 +1,8 @@
-# Investment Calculator App - Complete Documentation
+# 💰 Investo - Complete Documentation
 
 ## Overview
 
-The Investment Calculator App is a comprehensive Streamlit-based web application that provides stock analysis, investment calculations, AI-powered insights, and dynamic ticker management. The app combines machine learning predictions, technical analysis, and OpenAI integration to deliver a complete investment analysis platform.
+Investo is a comprehensive Streamlit-based web application that provides stock analysis, investment calculations, AI-powered insights, and dynamic ticker management. The app combines machine learning predictions, technical analysis, and OpenAI integration to deliver a complete investment analysis platform.
 
 ## Architecture
 

@@ -30,7 +30,7 @@ else:
     script_dir = Path(__file__).parent
     DB_PATH = str(script_dir / "data" / "duckdb" / "investo.duckdb")
 
-st.set_page_config(page_title="Investo – Investment Calculator", layout="wide")
+st.set_page_config(page_title="💰 Investo", page_icon="💰", layout="wide")
 
 # Get available tickers (needed for both tabs)
 @st.cache_data(ttl=60)
@@ -254,10 +254,10 @@ if not avail:
     st.stop()
 
 # Create tabs for different pages
-tab1, tab2, tab3 = st.tabs(["📊 Investment Calculator", "🤖 AI Stock Analysis", "➕ Add New Ticker"])
+tab1, tab2, tab3 = st.tabs(["💰 Investment Calculator", "🤖 AI Analysis", "➕ Add Ticker"])
 
 with tab1:
-    st.title("Investment Calculator")
+    st.title("💰 Investo - Investment Calculator")
     
     # Input section
     st.subheader("Investment Calculator")
@@ -421,7 +421,7 @@ with tab1:
 
 # AI Analysis Tab
 with tab2:
-    st.title("🤖 AI Stock Analysis")
+    st.title("💰 Investo - AI Stock Analysis")
     
     if not ANALYSIS_AVAILABLE:
         st.warning("Stock analysis is not available. Please check your OpenAI API key configuration.")
@@ -560,7 +560,7 @@ with tab2:
 
 # Add New Ticker Tab
 with tab3:
-    st.title("➕ Add New Ticker")
+    st.title("💰 Investo - Add New Ticker")
     
     st.markdown("""
     ### Add a New Stock to the System
