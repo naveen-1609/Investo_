@@ -39,70 +39,9 @@ META_PATH          = MODELS_DIR / "global_meta.json"
 MODEL_PATH         = MODELS_DIR / "global_lstm.pt"
 
 # ----------------------------
-# Feature engineering (same family as your ingestion)
+# Feature engineering (imported from shared module)
 # ----------------------------
-def ema(series: pd.Series, span: int) -> pd.Series:
-    return series.ewm(span=span, adjust=False).mean()
-
-def rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta = series.diff()
-    up = np.where(delta > 0, delta, 0.0)
-    down = np.where(delta < 0, -delta, 0.0)
-    roll_up = pd.Series(up, index=series.index).ewm(span=period, adjust=False).mean()
-    roll_down = pd.Series(down, index=series.index).ewm(span=period, adjust=False).mean()
-    rs = roll_up / (roll_down + 1e-12)
-    return 100 - (100 / (1 + rs))
-
-def bollinger(series: pd.Series, window: int = 20, k: float = 2.0) -> Tuple[pd.Series, pd.Series, pd.Series]:
-    mid = series.rolling(window).mean()
-    std = series.rolling(window).std(ddof=0)
-    return mid, mid + k*std, mid - k*std
-
-def macd_parts(series: pd.Series, fast=12, slow=26, signal=9) -> Tuple[pd.Series, pd.Series, pd.Series]:
-    f = ema(series, fast); s = ema(series, slow)
-    macd = f - s
-    sig = ema(macd, signal)
-    return macd, sig, macd - sig
-
-def atr(high: pd.Series, low: pd.Series, close: pd.Series, period=14) -> pd.Series:
-    prev_close = close.shift(1)
-    tr = pd.concat([(high-low).abs(), (high-prev_close).abs(), (low-prev_close).abs()], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
-
-def stochastic_kd(high, low, close, k_period=14, d_period=3) -> Tuple[pd.Series, pd.Series]:
-    ll = low.rolling(k_period).min()
-    hh = high.rolling(k_period).max()
-    k = 100 * (close - ll) / (hh - ll + 1e-12)
-    d = k.rolling(d_period).mean()
-    return k, d
-
-def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
-    sign = np.sign(close.diff().fillna(0))
-    return (sign * volume.fillna(0)).cumsum()
-
-FEATURE_COLS = [
-    "ret_1d","ret_5d","ret_21d","log_ret_1d",
-    "sma_5","sma_10","sma_20","ema_12","ema_26",
-    "macd","macd_signal","macd_hist",
-    "rsi_14",
-    "bb_mid_20","bb_upper_20","bb_lower_20",
-    "stoch_k_14","stoch_d_3",
-    "atr_14","obv","vol_21"
-]
-
-DDL_FEATURES = """
-CREATE TABLE IF NOT EXISTS features (
-  date DATE, ticker VARCHAR,
-  ret_1d DOUBLE, ret_5d DOUBLE, ret_21d DOUBLE, log_ret_1d DOUBLE,
-  sma_5 DOUBLE, sma_10 DOUBLE, sma_20 DOUBLE,
-  ema_12 DOUBLE, ema_26 DOUBLE,
-  macd DOUBLE, macd_signal DOUBLE, macd_hist DOUBLE,
-  rsi_14 DOUBLE,
-  bb_mid_20 DOUBLE, bb_upper_20 DOUBLE, bb_lower_20 DOUBLE,
-  stoch_k_14 DOUBLE, stoch_d_3 DOUBLE,
-  atr_14 DOUBLE, obv DOUBLE, vol_21 DOUBLE
-);
-"""
+from feature_engineering import build_features_for_ticker, get_feature_columns, get_features_ddl
 
 def compute_features_for_all_tickers(con: duckdb.DuckDBPyConnection):
     # pull prices for all tickers
@@ -111,38 +50,12 @@ def compute_features_for_all_tickers(con: duckdb.DuckDBPyConnection):
         raise RuntimeError("No data in 'prices'. Run ingestion first.")
     out = []
     for t, g in prices.groupby("ticker"):
-        g = g.sort_values("date").reset_index(drop=True)
-        price = g["adj_close"]
-
-        g["ret_1d"]  = price.pct_change()
-        g["ret_5d"]  = price.pct_change(5)
-        g["ret_21d"] = price.pct_change(21)
-        g["log_ret_1d"] = np.log(price / price.shift(1))
-        g["vol_21"] = g["ret_1d"].rolling(21).std() * np.sqrt(252)
-
-        g["sma_5"]  = price.rolling(5).mean()
-        g["sma_10"] = price.rolling(10).mean()
-        g["sma_20"] = price.rolling(20).mean()
-        g["ema_12"] = ema(price, 12)
-        g["ema_26"] = ema(price, 26)
-
-        g["macd"], g["macd_signal"], g["macd_hist"] = macd_parts(price, 12, 26, 9)
-
-        g["rsi_14"] = rsi(price, 14)
-
-        g["bb_mid_20"], g["bb_upper_20"], g["bb_lower_20"] = bollinger(price, 20, 2.0)
-
-        g["stoch_k_14"], g["stoch_d_3"] = stochastic_kd(g["high"], g["low"], g["close"], 14, 3)
-
-        g["atr_14"] = atr(g["high"], g["low"], g["close"], 14)
-
-        g["obv"] = obv(price, g["volume"])
-
-        g2 = g[["date","ticker"] + FEATURE_COLS].dropna().reset_index(drop=True)
-        out.append(g2)
+        # Use shared feature engineering function
+        feats = build_features_for_ticker(g)
+        out.append(feats)
 
     feats = pd.concat(out).reset_index(drop=True)
-    con.execute(DDL_FEATURES)
+    con.execute(get_features_ddl())
     con.register("df_feats_all", feats)
     con.execute("DELETE FROM features;")
     con.execute("INSERT INTO features SELECT * FROM df_feats_all;")
@@ -169,7 +82,7 @@ def ensure_features_table(con: duckdb.DuckDBPyConnection):
 # ----------------------------
 def load_all_joined(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     # Join prices + features for all tickers
-    cols = ",".join([f"f.{c}" for c in FEATURE_COLS])
+    cols = ",".join([f"f.{c}" for c in get_feature_columns()])
     sql = f"""
         SELECT p.date, p.ticker, p.adj_close, {cols}
         FROM prices p
@@ -256,14 +169,14 @@ def train_global(lookback: int, horizon: int, hidden: int, layers: int, embed_di
 
     # 3) global scaler on features
     scaler = StandardScaler()
-    df[FEATURE_COLS] = scaler.fit_transform(df[FEATURE_COLS])
+    df[get_feature_columns()] = scaler.fit_transform(df[get_feature_columns()])
     joblib.dump(scaler, GLOBAL_SCALER_PATH)
 
     # 4) ticker index + dataset
     ticker_index = build_ticker_index(df)
     Path(TICKER_INDEX_PATH).write_text(json.dumps(ticker_index, indent=2))
 
-    ds = GlobalSeqDataset(df, lookback, horizon, FEATURE_COLS, ticker_index)
+    ds = GlobalSeqDataset(df, lookback, horizon, get_feature_columns(), ticker_index)
     n = len(ds)
     if n < 100:
         raise RuntimeError(f"Very few training windows: {n}. Increase history or reduce lookback/horizon.")
@@ -277,7 +190,7 @@ def train_global(lookback: int, horizon: int, hidden: int, layers: int, embed_di
     dl_val   = DataLoader(val_ds,   batch_size=max(128, batch), shuffle=False)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = GlobalLSTM(in_dim=len(FEATURE_COLS),
+    model = GlobalLSTM(in_dim=len(get_feature_columns()),
                        embed_num=len(ticker_index),
                        embed_dim=embed_dim,
                        hidden=hidden, layers=layers,
@@ -323,7 +236,7 @@ def train_global(lookback: int, horizon: int, hidden: int, layers: int, embed_di
     torch.save(model.state_dict(), MODEL_PATH)
     meta = {
         "model": "GlobalLSTM",
-        "feature_cols": FEATURE_COLS,
+        "feature_cols": get_feature_columns(),
         "lookback": lookback,
         "horizon": horizon,
         "hidden": hidden,

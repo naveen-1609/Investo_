@@ -10,6 +10,7 @@ The app follows a modular architecture with clear separation of concerns:
 
 - **Frontend**: Streamlit web interface (`investment_calculator.py`)
 - **Data Pipeline**: Ingestion, model training, and prediction modules
+- **Feature Engineering**: Shared technical indicators module (`feature_engineering.py`)
 - **AI Integration**: OpenAI-powered stock analysis
 - **Database**: DuckDB for efficient data storage
 - **Orchestration**: DAG-based ticker management system
@@ -97,7 +98,28 @@ def add_new_ticker(ticker):
 
 ### Data Processing Pipeline
 
-#### 3. `Ingestion.py` - Data Collection Module
+#### 3. `feature_engineering.py` - Shared Technical Indicators Module
+**Purpose**: Centralized feature engineering module to eliminate code duplication.
+
+**Key Functions**:
+- `build_features_for_ticker(df)`: Main function to build all technical features
+- `ema()`, `rsi()`, `macd_parts()`: Individual technical indicator functions
+- `bollinger_bands()`, `atr()`, `stochastic_kd()`: Advanced technical indicators
+- `on_balance_volume()`: Volume-based indicators
+
+**Technical Indicators Included**:
+- **Returns**: 1d, 5d, 21d, log returns
+- **Moving Averages**: SMA (5, 10, 20), EMA (12, 26)
+- **Technical Indicators**: MACD, RSI, Bollinger Bands, Stochastic, ATR, OBV
+- **Volatility**: 21-day rolling volatility
+
+**Benefits**:
+- Single source of truth for all feature calculations
+- Eliminates code duplication between ingestion and model building
+- Consistent feature engineering across the entire pipeline
+- Easy to maintain and extend with new indicators
+
+#### 4. `Ingestion.py` - Data Collection Module
 **Purpose**: Handles data collection and database initialization.
 
 **Key Functions**:
@@ -108,15 +130,15 @@ def add_new_ticker(ticker):
 
 **Data Sources**:
 - Yahoo Finance API for historical stock data
-- Technical indicators calculation
+- Uses shared feature engineering module for technical indicators
 - Data quality validation and error handling
 
-#### 4. `ModelBuilding.py` - Machine Learning Module
+#### 5. `ModelBuilding.py` - Machine Learning Module
 **Purpose**: Handles LSTM model training and management.
 
 **Key Functions**:
 - `train_global()`: Trains the global LSTM model on all available data
-- Feature engineering and data preprocessing
+- Uses shared feature engineering module for consistent preprocessing
 - Model persistence and versioning
 - Cross-validation and performance metrics
 
@@ -124,8 +146,9 @@ def add_new_ticker(ticker):
 - LSTM neural network for time series prediction
 - Global training on entire dataset
 - Scalable architecture for multiple tickers
+- Ticker embedding for multi-ticker learning
 
-#### 5. `predictions.py` - Prediction Generation
+#### 6. `predictions.py` - Prediction Generation
 **Purpose**: Generates future price predictions using trained models.
 
 **Key Functions**:
@@ -141,7 +164,7 @@ def add_new_ticker(ticker):
 
 ### AI Integration
 
-#### 6. `stock_summarizer.py` - AI Analysis Module
+#### 7. `stock_summarizer.py` - AI Analysis Module
 **Purpose**: Integrates OpenAI API for comprehensive stock analysis.
 
 **Key Classes**:
@@ -217,6 +240,36 @@ class StockSummarizer:
 - Columnar storage for efficient data access
 - SQL interface for complex operations
 - Local file-based storage
+
+## Code Optimization & Architecture Improvements
+
+### Feature Engineering Refactoring
+**Problem Solved**: Eliminated code duplication between `Ingestion.py` and `ModelBuilding.py`.
+
+**Before**:
+- Duplicate feature engineering functions in both files (~160 lines total)
+- Risk of inconsistencies between ingestion and model building
+- Difficult to maintain and update technical indicators
+
+**After**:
+- Single `feature_engineering.py` module (~80 lines)
+- Both files import from shared module
+- Consistent calculations across entire pipeline
+- Easy to maintain and extend
+
+**Benefits**:
+- **Performance**: No duplicate calculations
+- **Consistency**: Same features everywhere
+- **Maintainability**: Single place to update
+- **Testability**: Easier to unit test
+- **Extensibility**: Easy to add new indicators
+
+### Technical Indicators Included
+The shared module provides 15+ technical indicators:
+- **Returns**: 1d, 5d, 21d, log returns
+- **Moving Averages**: SMA (5, 10, 20), EMA (12, 26)
+- **Technical Indicators**: MACD, RSI, Bollinger Bands, Stochastic, ATR, OBV
+- **Volatility**: 21-day rolling volatility
 
 ## Application Workflow
 

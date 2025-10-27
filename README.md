@@ -35,6 +35,7 @@ This app is ready for deployment on:
 - **Data**: Yahoo Finance API
 - **AI**: OpenAI GPT API
 - **Visualization**: Plotly
+- **Architecture**: Modular design with shared feature engineering
 
 ## 🔧 Configuration
 Set your OpenAI API key as an environment variable:
@@ -51,8 +52,15 @@ export OPENAI_API_KEY="your-api-key-here"
 
 ## 🛠️ Development
 The app uses a modular architecture with separate components for:
-- Data ingestion and processing
-- Machine learning model training
-- Prediction generation
-- DAG-based pipeline orchestration
-- AI analysis and summarization
+- **Data ingestion and processing** (`Ingestion.py`)
+- **Shared feature engineering** (`feature_engineering.py`) - eliminates code duplication
+- **Machine learning model training** (`ModelBuilding.py`)
+- **Prediction generation** (`predictions.py`)
+- **DAG-based pipeline orchestration** (`ticker_dag.py`)
+- **AI analysis and summarization** (`stock_summarizer.py`)
+
+### 🎯 Recent Improvements
+- **Eliminated code duplication**: Created shared `feature_engineering.py` module
+- **Consistent calculations**: Same technical indicators across all components
+- **Better maintainability**: Single source of truth for feature engineering
+- **Enhanced UI**: Modern, professional design with color-coded metrics

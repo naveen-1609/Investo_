@@ -49,21 +49,7 @@ CREATE TABLE IF NOT EXISTS prices (
 );
 """
 
-DDL_FEATURES = """
-CREATE TABLE IF NOT EXISTS features (
-  date DATE, ticker VARCHAR,
-  ret_1d DOUBLE, ret_5d DOUBLE, ret_21d DOUBLE, log_ret_1d DOUBLE,
-  sma_5 DOUBLE, sma_10 DOUBLE, sma_20 DOUBLE,
-  ema_12 DOUBLE, ema_26 DOUBLE,
-  macd DOUBLE, macd_signal DOUBLE, macd_hist DOUBLE,
-  rsi_14 DOUBLE,
-  bb_mid_20 DOUBLE, bb_upper_20 DOUBLE, bb_lower_20 DOUBLE,
-  stoch_k_14 DOUBLE, stoch_d_3 DOUBLE,
-  atr_14 DOUBLE,
-  obv DOUBLE,
-  vol_21 DOUBLE
-);
-"""
+# DDL_FEATURES is now imported from feature_engineering module
 
 def ensure_duckdb_initialized() -> bool:
     already = DUCKDB_PATH.exists()
@@ -71,7 +57,7 @@ def ensure_duckdb_initialized() -> bool:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DUCKDB_PATH))
     con.execute(DDL_PRICES)
-    con.execute(DDL_FEATURES)
+    con.execute(get_features_ddl())
     con.close()
     return already
 
@@ -105,89 +91,9 @@ def fetch_yf_one(ticker: str, retries: int = 3, backoff: float = 1.5) -> pd.Data
     raise last_err
 
 # ------------------------------
-# Feature engineering (>= 15 features)
+# Feature engineering (imported from shared module)
 # ------------------------------
-def ema(series: pd.Series, span: int) -> pd.Series:
-    return series.ewm(span=span, adjust=False).mean()
-
-def rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta = series.diff()
-    up = np.where(delta > 0, delta, 0.0)
-    down = np.where(delta < 0, -delta, 0.0)
-    roll_up = pd.Series(up, index=series.index).ewm(span=period, adjust=False).mean()
-    roll_down = pd.Series(down, index=series.index).ewm(span=period, adjust=False).mean()
-    rs = roll_up / (roll_down + 1e-12)
-    return 100 - (100 / (1 + rs))
-
-def bollinger_bands(series: pd.Series, window: int = 20, num_std: float = 2.0):
-    mid = series.rolling(window).mean()
-    std = series.rolling(window).std(ddof=0)
-    upper = mid + num_std * std
-    lower = mid - num_std * std
-    return mid, upper, lower
-
-def macd_parts(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
-    ema_fast = ema(series, fast)
-    ema_slow = ema(series, slow)
-    macd = ema_fast - ema_slow
-    macd_signal = ema(macd, signal)
-    macd_hist = macd - macd_signal
-    return macd, macd_signal, macd_hist
-
-def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
-    prev_close = close.shift(1)
-    tr = pd.concat([
-        (high - low).abs(),
-        (high - prev_close).abs(),
-        (low - prev_close).abs()
-    ], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
-
-def stochastic_kd(high: pd.Series, low: pd.Series, close: pd.Series, k_period: int = 14, d_period: int = 3):
-    lowest_low = low.rolling(k_period).min()
-    highest_high = high.rolling(k_period).max()
-    k = 100 * (close - lowest_low) / (highest_high - lowest_low + 1e-12)
-    d = k.rolling(d_period).mean()
-    return k, d
-
-def on_balance_volume(close: pd.Series, volume: pd.Series) -> pd.Series:
-    sign = np.sign(close.diff().fillna(0))
-    return (sign * volume.fillna(0)).cumsum()
-
-def build_features_for_one(pr: pd.DataFrame) -> pd.DataFrame:
-    g = pr.copy().reset_index(drop=True)
-    price = g["adj_close"]
-
-    g["ret_1d"]  = price.pct_change()
-    g["ret_5d"]  = price.pct_change(5)
-    g["ret_21d"] = price.pct_change(21)
-    g["log_ret_1d"] = np.log(price / price.shift(1))
-    g["vol_21"] = g["ret_1d"].rolling(21).std() * np.sqrt(252)
-
-    g["sma_5"]  = price.rolling(5).mean()
-    g["sma_10"] = price.rolling(10).mean()
-    g["sma_20"] = price.rolling(20).mean()
-    g["ema_12"] = ema(price, 12)
-    g["ema_26"] = ema(price, 26)
-
-    g["macd"], g["macd_signal"], g["macd_hist"] = macd_parts(price, 12, 26, 9)
-    g["rsi_14"] = rsi(price, 14)
-    g["bb_mid_20"], g["bb_upper_20"], g["bb_lower_20"] = bollinger_bands(price, 20, 2.0)
-    g["stoch_k_14"], g["stoch_d_3"] = stochastic_kd(g["high"], g["low"], g["close"], 14, 3)
-    g["atr_14"] = atr(g["high"], g["low"], g["close"], 14)
-    g["obv"] = on_balance_volume(price, g["volume"])
-
-    feat_cols = [
-        "ret_1d","ret_5d","ret_21d","log_ret_1d",
-        "sma_5","sma_10","sma_20","ema_12","ema_26",
-        "macd","macd_signal","macd_hist",
-        "rsi_14",
-        "bb_mid_20","bb_upper_20","bb_lower_20",
-        "stoch_k_14","stoch_d_3",
-        "atr_14","obv","vol_21"
-    ]
-    g = g[["date","ticker"] + feat_cols].dropna().reset_index(drop=True)
-    return g
+from feature_engineering import build_features_for_ticker, get_features_ddl, get_feature_columns
 
 # ------------------------------
 # Upserts
@@ -227,7 +133,7 @@ def upsert_features(con, feats: pd.DataFrame, replace_existing: bool = False) ->
     if feats.empty:
         return 0
     ticker = feats["ticker"].iloc[0]
-    con.execute(DDL_FEATURES)
+    con.execute(get_features_ddl())
 
     if replace_existing:
         con.execute("DELETE FROM features WHERE ticker = ?", [ticker])
@@ -299,7 +205,7 @@ def ingest_one(con: duckdb.DuckDBPyConnection, ticker: str, replace_existing: bo
     n_prices = upsert_prices(con, df, replace_existing=replace_existing)
     log.info(f"  ✓ upserted {n_prices} rows into prices")
 
-    feats = build_features_for_one(df)
+    feats = build_features_for_ticker(df)
     n_feats = upsert_features(con, feats, replace_existing=replace_existing)
     log.info(f"  ✓ upserted {n_feats} rows into features")
 
