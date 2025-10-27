@@ -458,109 +458,173 @@ with tab2:
             try:
                 analysis = get_stock_analysis(selected_ticker)
                 
-                st.subheader(f"🤖 AI Analysis: {selected_ticker}")
+                # Header with stock info
+                st.markdown(f"""
+                <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                    <h2 style="color: white; margin: 0; text-align: center;">🤖 AI Analysis: {selected_ticker}</h2>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                # Quick Summary Card
-                st.markdown("### 📊 Quick Summary")
-                col1, col2, col3 = st.columns(3)
+                # Key Metrics Dashboard
+                st.markdown("### 📊 Investment Dashboard")
+                
+                # Recommendation Card
+                rec_color = "🟢" if "buy" in analysis.recommendations.primary_recommendation.lower() else "🔴" if "sell" in analysis.recommendations.primary_recommendation.lower() else "🟡"
+                
+                col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    st.metric("Recommendation", analysis.recommendations.primary_recommendation)
-                    st.metric("Risk Level", analysis.risk_assessment.risk_level)
+                    st.markdown(f"""
+                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #28a745; text-align: center;">
+                        <h4 style="margin: 0; color: #28a745;">{rec_color} Recommendation</h4>
+                        <h3 style="margin: 5px 0; color: #333;">{analysis.recommendations.primary_recommendation}</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 with col2:
-                    st.metric("Market Sentiment", analysis.market_outlook.market_sentiment)
-                    st.metric("Trend", analysis.performance.current_trend)
+                    risk_color = "#dc3545" if analysis.risk_assessment.risk_score > 7 else "#ffc107" if analysis.risk_assessment.risk_score > 4 else "#28a745"
+                    st.markdown(f"""
+                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid {risk_color}; text-align: center;">
+                        <h4 style="margin: 0; color: {risk_color};">⚠️ Risk Level</h4>
+                        <h3 style="margin: 5px 0; color: #333;">{analysis.risk_assessment.risk_score}/10</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 with col3:
-                    st.metric("Confidence", f"{analysis.confidence_score}/10")
-                    st.metric("Holding Period", analysis.investment_timing.holding_period)
+                    sentiment_color = "#28a745" if "bullish" in analysis.market_outlook.market_sentiment.lower() else "#dc3545" if "bearish" in analysis.market_outlook.market_sentiment.lower() else "#ffc107"
+                    st.markdown(f"""
+                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid {sentiment_color}; text-align: center;">
+                        <h4 style="margin: 0; color: {sentiment_color};">📈 Market Sentiment</h4>
+                        <h3 style="margin: 5px 0; color: #333;">{analysis.market_outlook.market_sentiment}</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
-                # Executive Summary - More Concise
-                st.markdown("### 💡 Key Insights")
-                st.success(f"**Summary:** {analysis.summary}")
+                with col4:
+                    st.markdown(f"""
+                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #17a2b8; text-align: center;">
+                        <h4 style="margin: 0; color: #17a2b8;">🎯 Confidence</h4>
+                        <h3 style="margin: 5px 0; color: #333;">{analysis.confidence_score}/10</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
-                # Main Analysis in Compact Format
-                analysis_tab1, analysis_tab2, analysis_tab3 = st.tabs([
-                    "🎯 Recommendation & Risk", 
-                    "📈 Technical & Fundamental", 
-                    "⏰ Timing & Strategy"
-                ])
+                # Executive Summary Card
+                st.markdown("### 💡 Executive Summary")
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 10px; color: white;">
+                    <p style="margin: 0; font-size: 16px; line-height: 1.5;">{analysis.summary}</p>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                with analysis_tab1:
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("#### 🎯 Investment Recommendation")
-                        st.success(f"**Action:** {analysis.recommendations.primary_recommendation}")
-                        if analysis.recommendations.target_price:
-                            st.info(f"**Target Price:** {analysis.recommendations.target_price}")
-                        if analysis.recommendations.stop_loss_suggestion:
-                            st.warning(f"**Stop Loss:** {analysis.recommendations.stop_loss_suggestion}")
-                        st.write(f"**Portfolio Allocation:** {analysis.recommendations.portfolio_allocation}")
-                    
-                    with col2:
-                        st.markdown("#### ⚠️ Risk Assessment")
-                        st.metric("Risk Score", f"{analysis.risk_assessment.risk_score}/10")
-                        st.write(f"**Level:** {analysis.risk_assessment.risk_level}")
-                        st.write("**Key Risks:**")
-                        for risk in analysis.risk_assessment.risk_factors[:3]:  # Show only top 3
-                            st.write(f"• {risk}")
+                # Main Analysis Cards
+                st.markdown("### 📋 Detailed Analysis")
                 
-                with analysis_tab2:
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("#### 📈 Technical Analysis")
-                        st.write(f"**Trend:** {analysis.performance.current_trend}")
-                        st.write(f"**Momentum:** {analysis.performance.momentum}")
-                        st.write(f"**Volatility:** {analysis.performance.volatility_level}")
-                        st.write("**Key Indicators:**")
-                        for indicator in analysis.technical_analysis.key_indicators[:2]:  # Show only top 2
-                            st.write(f"• {indicator}")
-                    
-                    with col2:
-                        st.markdown("#### 🏢 Fundamental Analysis")
-                        st.write(f"**Company Health:** {analysis.fundamental_analysis.company_health}")
-                        st.write(f"**Growth Prospects:** {analysis.fundamental_analysis.growth_prospects}")
-                        st.write(f"**Competitive Position:** {analysis.fundamental_analysis.competitive_position}")
-                        st.write(f"**Valuation:** {analysis.fundamental_analysis.valuation_assessment}")
+                # Investment Recommendation Card
+                st.markdown("#### 🎯 Investment Recommendation")
+                col1, col2 = st.columns([2, 1])
                 
-                with analysis_tab3:
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("#### ⏰ Investment Timing")
-                        st.write(f"**Entry Time:** {analysis.investment_timing.optimal_entry_time}")
-                        st.write(f"**Exit Time:** {analysis.investment_timing.optimal_exit_time}")
-                        st.write(f"**Holding Period:** {analysis.investment_timing.holding_period}")
-                        st.write(f"**Market Conditions:** {analysis.investment_timing.market_conditions}")
-                    
-                    with col2:
-                        st.markdown("#### 🌍 Market Outlook")
-                        st.write(f"**Sector Outlook:** {analysis.market_outlook.sector_outlook}")
-                        st.write(f"**Sentiment:** {analysis.market_outlook.market_sentiment}")
-                        st.write("**External Factors:**")
-                        for factor in analysis.market_outlook.external_factors[:2]:  # Show only top 2
-                            st.write(f"• {factor}")
+                with col1:
+                    st.markdown(f"""
+                    <div style="background-color: #e8f5e8; padding: 20px; border-radius: 8px; border: 1px solid #28a745;">
+                        <h4 style="color: #28a745; margin-top: 0;">Primary Action</h4>
+                        <h3 style="color: #333; margin: 10px 0;">{analysis.recommendations.primary_recommendation}</h3>
+                        <p><strong>Portfolio Allocation:</strong> {analysis.recommendations.portfolio_allocation}</p>
+                        {f'<p><strong>Target Price:</strong> {analysis.recommendations.target_price}</p>' if analysis.recommendations.target_price else ''}
+                        {f'<p><strong>Stop Loss:</strong> {analysis.recommendations.stop_loss_suggestion}</p>' if analysis.recommendations.stop_loss_suggestion else ''}
+                    </div>
+                    """, unsafe_allow_html=True)
                 
-                # Alternative Strategies - Compact
+                with col2:
+                    st.markdown(f"""
+                    <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border: 1px solid #ffc107;">
+                        <h4 style="color: #856404; margin-top: 0;">Risk Assessment</h4>
+                        <h3 style="color: #333; margin: 10px 0;">{analysis.risk_assessment.risk_score}/10</h3>
+                        <p><strong>Level:</strong> {analysis.risk_assessment.risk_level}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Technical & Fundamental Analysis
+                st.markdown("#### 📈 Technical & Fundamental Analysis")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown(f"""
+                    <div style="background-color: #d1ecf1; padding: 20px; border-radius: 8px; border: 1px solid #17a2b8;">
+                        <h4 style="color: #0c5460; margin-top: 0;">📊 Technical Analysis</h4>
+                        <p><strong>Trend:</strong> {analysis.performance.current_trend}</p>
+                        <p><strong>Momentum:</strong> {analysis.performance.momentum}</p>
+                        <p><strong>Volatility:</strong> {analysis.performance.volatility_level}</p>
+                        <p><strong>Key Indicators:</strong></p>
+                        <ul>
+                            {''.join([f'<li>{indicator}</li>' for indicator in analysis.technical_analysis.key_indicators[:2]])}
+                        </ul>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown(f"""
+                    <div style="background-color: #f8d7da; padding: 20px; border-radius: 8px; border: 1px solid #dc3545;">
+                        <h4 style="color: #721c24; margin-top: 0;">🏢 Fundamental Analysis</h4>
+                        <p><strong>Company Health:</strong> {analysis.fundamental_analysis.company_health}</p>
+                        <p><strong>Growth Prospects:</strong> {analysis.fundamental_analysis.growth_prospects}</p>
+                        <p><strong>Competitive Position:</strong> {analysis.fundamental_analysis.competitive_position}</p>
+                        <p><strong>Valuation:</strong> {analysis.fundamental_analysis.valuation_assessment}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Timing & Market Outlook
+                st.markdown("#### ⏰ Investment Timing & Market Outlook")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown(f"""
+                    <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border: 1px solid #28a745;">
+                        <h4 style="color: #155724; margin-top: 0;">⏰ Investment Timing</h4>
+                        <p><strong>Entry Time:</strong> {analysis.investment_timing.optimal_entry_time}</p>
+                        <p><strong>Exit Time:</strong> {analysis.investment_timing.optimal_exit_time}</p>
+                        <p><strong>Holding Period:</strong> {analysis.investment_timing.holding_period}</p>
+                        <p><strong>Market Conditions:</strong> {analysis.investment_timing.market_conditions}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown(f"""
+                    <div style="background-color: #cce5ff; padding: 20px; border-radius: 8px; border: 1px solid #007bff;">
+                        <h4 style="color: #004085; margin-top: 0;">🌍 Market Outlook</h4>
+                        <p><strong>Sector Outlook:</strong> {analysis.market_outlook.sector_outlook}</p>
+                        <p><strong>Sentiment:</strong> {analysis.market_outlook.market_sentiment}</p>
+                        <p><strong>External Factors:</strong></p>
+                        <ul>
+                            {''.join([f'<li>{factor}</li>' for factor in analysis.market_outlook.external_factors[:2]])}
+                        </ul>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Alternative Strategies
                 if analysis.recommendations.alternative_strategies:
-                    st.markdown("### 🔄 Alternative Strategies")
-                    for i, strategy in enumerate(analysis.recommendations.alternative_strategies[:3], 1):  # Show only top 3
-                        st.write(f"{i}. {strategy}")
+                    st.markdown("#### 🔄 Alternative Strategies")
+                    strategies_html = ""
+                    for i, strategy in enumerate(analysis.recommendations.alternative_strategies[:3], 1):
+                        strategies_html += f'<div style="background-color: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 3px solid #6c757d;"><strong>{i}.</strong> {strategy}</div>'
+                    
+                    st.markdown(strategies_html, unsafe_allow_html=True)
                 
-                # Key Insights - Compact
+                # Key Insights
                 if analysis.key_insights:
-                    st.markdown("### 💡 Key Insights")
-                    for insight in analysis.key_insights[:3]:  # Show only top 3
-                        st.write(f"• {insight}")
+                    st.markdown("#### 💡 Key Insights")
+                    insights_html = ""
+                    for insight in analysis.key_insights[:3]:
+                        insights_html += f'<div style="background-color: #fff3cd; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 3px solid #ffc107;">💡 {insight}</div>'
+                    
+                    st.markdown(insights_html, unsafe_allow_html=True)
                 
-                # Warnings - Compact
+                # Warnings
                 if analysis.warnings:
-                    st.markdown("### ⚠️ Important Warnings")
-                    for warning in analysis.warnings[:2]:  # Show only top 2
-                        st.error(f"• {warning}")
+                    st.markdown("#### ⚠️ Important Warnings")
+                    warnings_html = ""
+                    for warning in analysis.warnings[:2]:
+                        warnings_html += f'<div style="background-color: #f8d7da; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 3px solid #dc3545;">⚠️ {warning}</div>'
+                    
+                    st.markdown(warnings_html, unsafe_allow_html=True)
                 
             except Exception as e:
                 st.error(f"Error analyzing stock: {str(e)}")
