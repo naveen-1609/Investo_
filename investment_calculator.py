@@ -264,7 +264,9 @@ with tab1:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        sel = st.selectbox("Select Stock", options=avail, index=0)
+        sel = st.selectbox("Select Stock", options=avail, index=0, key="investment_ticker")
+        # Store selected ticker in session state for AI analysis tab
+        st.session_state.selected_ticker = sel
         
     with col2:
         amt = st.number_input("Investment Amount ($)", min_value=100.0, value=10000.0, step=100.0)
@@ -427,129 +429,137 @@ with tab2:
         st.warning("Stock analysis is not available. Please check your OpenAI API key configuration.")
         st.stop()
     
-    # Get the selected stock from the main tab
-    if 'last_result' in st.session_state and st.session_state.last_result:
-        selected_ticker = st.session_state.get('selected_ticker', avail[0] if avail else 'AAPL')
+    # Check if we have a ticker from the Investment Calculator tab
+    if 'selected_ticker' in st.session_state and st.session_state.selected_ticker:
+        st.info(f"📈 Analyzing the same stock from Investment Calculator: **{st.session_state.selected_ticker}**")
+        default_ticker = st.session_state.selected_ticker
+        default_index = avail.index(default_ticker) if default_ticker in avail else 0
     else:
-        selected_ticker = st.selectbox("Select Stock for Analysis", options=avail, index=0, key="analysis_ticker")
-        st.session_state.selected_ticker = selected_ticker
+        st.info("💡 Select a stock below for AI analysis, or go to the Investment Calculator tab first to analyze the same stock.")
+        default_ticker = avail[0] if avail else 'AAPL'
+        default_index = 0
     
-    analyze_clicked = st.button("Analyze Stock with AI", type="primary")
+    # Always show dropdown for flexibility
+    selected_ticker = st.selectbox(
+        "Select Stock for AI Analysis", 
+        options=avail, 
+        index=default_index,
+        key="ai_analysis_ticker",
+        help="Choose any stock for AI-powered analysis"
+    )
+    
+    # Update session state
+    st.session_state.ai_selected_ticker = selected_ticker
+    
+    analyze_clicked = st.button("🤖 Analyze Stock with AI", type="primary")
     
     if analyze_clicked:
         with st.spinner("Analyzing stock with AI..."):
             try:
                 analysis = get_stock_analysis(selected_ticker)
                 
-                st.subheader(f"🤖 AI Stock Analysis for {selected_ticker}")
+                st.subheader(f"🤖 AI Analysis: {selected_ticker}")
                 
-                # Executive Summary
-                st.markdown("### 📊 Executive Summary")
-                st.info(analysis.summary)
-                
-                # Key Metrics in columns
-                col1, col2, col3, col4 = st.columns(4)
+                # Quick Summary Card
+                st.markdown("### 📊 Quick Summary")
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
+                    st.metric("Recommendation", analysis.recommendations.primary_recommendation)
                     st.metric("Risk Level", analysis.risk_assessment.risk_level)
-                    st.metric("Risk Score", f"{analysis.risk_assessment.risk_score}/10")
                 
                 with col2:
                     st.metric("Market Sentiment", analysis.market_outlook.market_sentiment)
-                    st.metric("Confidence Score", f"{analysis.confidence_score}/10")
+                    st.metric("Trend", analysis.performance.current_trend)
                 
                 with col3:
-                    st.metric("Current Trend", analysis.performance.current_trend)
-                    st.metric("Volatility", analysis.performance.volatility_level)
-                
-                with col4:
-                    st.metric("Momentum", analysis.performance.momentum)
+                    st.metric("Confidence", f"{analysis.confidence_score}/10")
                     st.metric("Holding Period", analysis.investment_timing.holding_period)
                 
-                # Detailed Analysis in tabs
-                analysis_tab1, analysis_tab2, analysis_tab3, analysis_tab4, analysis_tab5 = st.tabs([
-                    "🎯 Performance & Risk", 
-                    "⏰ Timing & Strategy", 
-                    "📈 Technical Analysis", 
-                    "🏢 Fundamental Analysis", 
-                    "💡 Recommendations"
+                # Executive Summary - More Concise
+                st.markdown("### 💡 Key Insights")
+                st.success(f"**Summary:** {analysis.summary}")
+                
+                # Main Analysis in Compact Format
+                analysis_tab1, analysis_tab2, analysis_tab3 = st.tabs([
+                    "🎯 Recommendation & Risk", 
+                    "📈 Technical & Fundamental", 
+                    "⏰ Timing & Strategy"
                 ])
                 
                 with analysis_tab1:
-                    st.markdown("#### Stock Performance")
-                    st.write(f"**Current Trend:** {analysis.performance.current_trend}")
-                    st.write(f"**Volatility Level:** {analysis.performance.volatility_level}")
-                    st.write(f"**Momentum:** {analysis.performance.momentum}")
-                    st.write(f"**Support/Resistance:** {analysis.performance.support_resistance}")
+                    col1, col2 = st.columns(2)
                     
-                    st.markdown("#### Risk Assessment")
-                    st.write(f"**Risk Level:** {analysis.risk_assessment.risk_level}")
-                    st.write(f"**Risk Score:** {analysis.risk_assessment.risk_score}/10")
-                    st.write("**Key Risk Factors:**")
-                    for risk in analysis.risk_assessment.risk_factors:
-                        st.write(f"• {risk}")
-                    st.write(f"**Diversification Advice:** {analysis.risk_assessment.diversification_advice}")
+                    with col1:
+                        st.markdown("#### 🎯 Investment Recommendation")
+                        st.success(f"**Action:** {analysis.recommendations.primary_recommendation}")
+                        if analysis.recommendations.target_price:
+                            st.info(f"**Target Price:** {analysis.recommendations.target_price}")
+                        if analysis.recommendations.stop_loss_suggestion:
+                            st.warning(f"**Stop Loss:** {analysis.recommendations.stop_loss_suggestion}")
+                        st.write(f"**Portfolio Allocation:** {analysis.recommendations.portfolio_allocation}")
+                    
+                    with col2:
+                        st.markdown("#### ⚠️ Risk Assessment")
+                        st.metric("Risk Score", f"{analysis.risk_assessment.risk_score}/10")
+                        st.write(f"**Level:** {analysis.risk_assessment.risk_level}")
+                        st.write("**Key Risks:**")
+                        for risk in analysis.risk_assessment.risk_factors[:3]:  # Show only top 3
+                            st.write(f"• {risk}")
                 
                 with analysis_tab2:
-                    st.markdown("#### Investment Timing")
-                    st.write(f"**Optimal Entry Time:** {analysis.investment_timing.optimal_entry_time}")
-                    st.write(f"**Optimal Exit Time:** {analysis.investment_timing.optimal_exit_time}")
-                    st.write(f"**Recommended Holding Period:** {analysis.investment_timing.holding_period}")
-                    st.write(f"**Market Conditions:** {analysis.investment_timing.market_conditions}")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("#### 📈 Technical Analysis")
+                        st.write(f"**Trend:** {analysis.performance.current_trend}")
+                        st.write(f"**Momentum:** {analysis.performance.momentum}")
+                        st.write(f"**Volatility:** {analysis.performance.volatility_level}")
+                        st.write("**Key Indicators:**")
+                        for indicator in analysis.technical_analysis.key_indicators[:2]:  # Show only top 2
+                            st.write(f"• {indicator}")
+                    
+                    with col2:
+                        st.markdown("#### 🏢 Fundamental Analysis")
+                        st.write(f"**Company Health:** {analysis.fundamental_analysis.company_health}")
+                        st.write(f"**Growth Prospects:** {analysis.fundamental_analysis.growth_prospects}")
+                        st.write(f"**Competitive Position:** {analysis.fundamental_analysis.competitive_position}")
+                        st.write(f"**Valuation:** {analysis.fundamental_analysis.valuation_assessment}")
                 
                 with analysis_tab3:
-                    st.markdown("#### Technical Analysis")
-                    st.write("**Key Indicators:**")
-                    for indicator in analysis.technical_analysis.key_indicators:
-                        st.write(f"• {indicator}")
-                    st.write("**Chart Patterns:**")
-                    for pattern in analysis.technical_analysis.chart_patterns:
-                        st.write(f"• {pattern}")
-                    st.write(f"**Volume Analysis:** {analysis.technical_analysis.volume_analysis}")
-                    st.write(f"**Trend Strength:** {analysis.technical_analysis.trend_strength}")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("#### ⏰ Investment Timing")
+                        st.write(f"**Entry Time:** {analysis.investment_timing.optimal_entry_time}")
+                        st.write(f"**Exit Time:** {analysis.investment_timing.optimal_exit_time}")
+                        st.write(f"**Holding Period:** {analysis.investment_timing.holding_period}")
+                        st.write(f"**Market Conditions:** {analysis.investment_timing.market_conditions}")
+                    
+                    with col2:
+                        st.markdown("#### 🌍 Market Outlook")
+                        st.write(f"**Sector Outlook:** {analysis.market_outlook.sector_outlook}")
+                        st.write(f"**Sentiment:** {analysis.market_outlook.market_sentiment}")
+                        st.write("**External Factors:**")
+                        for factor in analysis.market_outlook.external_factors[:2]:  # Show only top 2
+                            st.write(f"• {factor}")
                 
-                with analysis_tab4:
-                    st.markdown("#### Fundamental Analysis")
-                    st.write(f"**Company Health:** {analysis.fundamental_analysis.company_health}")
-                    st.write(f"**Growth Prospects:** {analysis.fundamental_analysis.growth_prospects}")
-                    st.write(f"**Competitive Position:** {analysis.fundamental_analysis.competitive_position}")
-                    st.write(f"**Valuation Assessment:** {analysis.fundamental_analysis.valuation_assessment}")
+                # Alternative Strategies - Compact
+                if analysis.recommendations.alternative_strategies:
+                    st.markdown("### 🔄 Alternative Strategies")
+                    for i, strategy in enumerate(analysis.recommendations.alternative_strategies[:3], 1):  # Show only top 3
+                        st.write(f"{i}. {strategy}")
                 
-                with analysis_tab5:
-                    st.markdown("#### Investment Recommendations")
-                    st.success(f"**Primary Recommendation:** {analysis.recommendations.primary_recommendation}")
-                    st.write("**Alternative Strategies:**")
-                    for strategy in analysis.recommendations.alternative_strategies:
-                        st.write(f"• {strategy}")
-                    st.write(f"**Portfolio Allocation:** {analysis.recommendations.portfolio_allocation}")
-                    if analysis.recommendations.stop_loss_suggestion:
-                        st.write(f"**Stop-Loss Suggestion:** {analysis.recommendations.stop_loss_suggestion}")
-                    if analysis.recommendations.target_price:
-                        st.write(f"**Target Price:** {analysis.recommendations.target_price}")
-                
-                # Market Outlook
-                st.markdown("### 🌍 Market Outlook")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write(f"**Sector Outlook:** {analysis.market_outlook.sector_outlook}")
-                    st.write(f"**Market Sentiment:** {analysis.market_outlook.market_sentiment}")
-                    st.write(f"**Economic Indicators:** {analysis.market_outlook.economic_indicators}")
-                
-                with col2:
-                    st.write("**External Factors:**")
-                    for factor in analysis.market_outlook.external_factors:
-                        st.write(f"• {factor}")
-                
-                # Key Insights and Warnings
+                # Key Insights - Compact
                 if analysis.key_insights:
                     st.markdown("### 💡 Key Insights")
-                    for insight in analysis.key_insights:
+                    for insight in analysis.key_insights[:3]:  # Show only top 3
                         st.write(f"• {insight}")
                 
+                # Warnings - Compact
                 if analysis.warnings:
                     st.markdown("### ⚠️ Important Warnings")
-                    for warning in analysis.warnings:
+                    for warning in analysis.warnings[:2]:  # Show only top 2
                         st.error(f"• {warning}")
                 
             except Exception as e:
