@@ -12,7 +12,7 @@ A comprehensive stock analysis application featuring:
 
 ## 📊 Project Architecture & Data Flow
 
-![Investo Project Flowchart: Data Ingestion, ML Pipeline, AI Analysis, and New Ticker Workflow](data/other/Screenshot%202025-10-26%233829.png)
+![Investo Project Flowchart: Data Ingestion, ML Pipeline, AI Analysis, and New Ticker Workflow](data/other/Screenshot%202025-10-26%20233829.png)
 
 *This diagram shows the complete data flow from Yahoo Finance ingestion through ML pipeline to AI analysis, plus the automated ticker addition workflow.*
 
