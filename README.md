@@ -10,6 +10,12 @@ A comprehensive stock analysis application featuring:
 - **ML Predictions**: LSTM-based price predictions
 - **Professional UI**: Modern, responsive design with beautiful tables
 
+## 📊 Project Architecture & Data Flow
+
+![Investo Project Flowchart: Data Ingestion, ML Pipeline, AI Analysis, and New Ticker Workflow](data/other/Screenshot%202025-10-26%20233539.png)
+
+*This diagram shows the complete data flow from Yahoo Finance ingestion through ML pipeline to AI analysis, plus the automated ticker addition workflow.*
+
 ## 🚀 Quick Start
 
 ### Local Development
