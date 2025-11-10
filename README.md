@@ -71,4 +71,4 @@ The app uses a modular architecture with separate components for:
 - **Better maintainability**: Single source of truth for feature engineering
 - **Enhanced UI**: Modern, professional design with color-coded metrics
 
-![App Link](https://investo-bjcgg5dsatbesusjuz8wdk.streamlit.app/))
+![https://investo-bjcgg5dsatbesusjuz8wdk.streamlit.app/](https://investo-bjcgg5dsatbesusjuz8wdk.streamlit.app/)
